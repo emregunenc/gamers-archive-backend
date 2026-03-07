@@ -27,15 +27,8 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 # --- SUPABASE ---
-supabase = None
-
-@app.on_event("startup")
-def startup():
-    global supabase
-    if SUPABASE_URL and SUPABASE_KEY:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    else:
-        print("WARNING: SUPABASE env vars missing!")
+print(f"SUPABASE_URL: {SUPABASE_URL[:20] if SUPABASE_URL else 'EMPTY'}")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 # --- MODELLER ---
 class GameAdd(BaseModel):
