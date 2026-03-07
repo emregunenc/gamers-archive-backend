@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client
@@ -221,16 +221,29 @@ def get_recommendations(puan_min: int = 85, puan_max: int = 100, tags: str = "")
 
 # --- KULLANICI ENDPOINTS ---
 
+def get_country_from_ip(ip: str) -> str:
+    try:
+        r = requests.get(f"https://ipapi.co/{ip}/country/", timeout=5)
+        if r.status_code == 200 and len(r.text.strip()) == 2:
+            return r.text.strip()
+    except:
+        pass
+    return "TR"
+
 @app.post("/users")
-def create_or_get_user(email: str, display_name: str = "", avatar_url: str = ""):
+def create_or_get_user(request: Request, email: str, display_name: str = "", avatar_url: str = ""):
     try:
         existing = supabase.table("users").select("*").eq("email", email).execute()
         if existing.data:
             return existing.data[0]
+        # IP'den ülke algıla
+        client_ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
+        country = get_country_from_ip(client_ip)
         new_user = supabase.table("users").insert({
             "email": email,
             "display_name": display_name,
-            "avatar_url": avatar_url
+            "avatar_url": avatar_url,
+            "country": country
         }).execute()
         return new_user.data[0]
     except Exception as e:
