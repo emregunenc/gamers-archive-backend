@@ -1,9 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from supabase import create_client
 import requests
 import re
 import json
 import os
+from typing import Optional
 
 app = FastAPI(title="Gamer's Archive API")
 
@@ -20,6 +23,26 @@ ITAD_API_KEY = os.getenv("ITAD_API_KEY", "fb00f3da8717cec28c29230c6751e795aaeec8
 RAWG_API_KEY = os.getenv("RAWG_API_KEY", "d0cc05e711884b91911e36cb2f2e44cc")
 IGDB_CLIENT_ID = os.getenv("IGDB_CLIENT_ID", "2bugrxp3scbr1l493je0fgex1mop4h")
 IGDB_CLIENT_SECRET = os.getenv("IGDB_CLIENT_SECRET", "j400fdeqok9biwj8x879k980iuz8ue")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# --- SUPABASE ---
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# --- MODELLER ---
+class GameAdd(BaseModel):
+    user_id: str
+    name: str
+    category_id: Optional[str] = None
+    status: str = "backlog"
+
+class GameUpdate(BaseModel):
+    status: Optional[str] = None
+    category_id: Optional[str] = None
+
+class CategoryAdd(BaseModel):
+    user_id: str
+    name: str
 
 # --- IGDB TOKEN ---
 def get_igdb_token():
@@ -37,7 +60,7 @@ def get_igdb_token():
     except:
         return None
 
-# --- ENDPOINTS ---
+# --- GENEL ENDPOINTS ---
 
 @app.get("/")
 def root():
@@ -45,7 +68,6 @@ def root():
 
 @app.get("/search")
 def search_game(query: str):
-    """Steam'den oyun ara"""
     try:
         r = requests.get(
             f"https://store.steampowered.com/api/storesearch/?term={query}&l=turkish&cc=TR",
@@ -58,10 +80,7 @@ def search_game(query: str):
 
 @app.get("/game/{app_id}")
 def get_game_details(app_id: int):
-    """Oyun detayları - tüm veriler"""
     result = {}
-
-    # Steam detay
     try:
         det = requests.get(f"https://store.steampowered.com/api/appdetails?appids={app_id}&l=turkish").json()
         if det[str(app_id)]['success']:
@@ -70,8 +89,6 @@ def get_game_details(app_id: int):
             result['name'] = data.get('name', '')
     except:
         pass
-
-    # Steam puan
     try:
         r = requests.get(f"https://store.steampowered.com/appreviews/{app_id}?json=1&language=all").json()
         total = r["query_summary"]["total_reviews"]
@@ -79,22 +96,16 @@ def get_game_details(app_id: int):
         result['steam_score'] = round((positive / total) * 100) if total > 0 else None
     except:
         pass
-
-    # Steam fiyat (USD)
     try:
         kur = requests.get("https://api.exchangerate-api.com/v4/latest/USD").json()['rates']['TRY']
         result['exchange_rate'] = kur
     except:
         pass
-
     return result
 
 @app.get("/prices")
-def get_prices(name: str, steam_price_usd: float = 0):
-    """Tüm mağaza fiyatları"""
+def get_prices(name: str):
     result = {}
-
-    # Epic (ITAD)
     try:
         clean = re.sub(r'\(.*?\)|[:™®]', '', name).strip()
         lookup = requests.get(
@@ -117,8 +128,6 @@ def get_prices(name: str, steam_price_usd: float = 0):
                         break
     except:
         pass
-
-    # PS Store
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(
@@ -130,22 +139,17 @@ def get_prices(name: str, steam_price_usd: float = 0):
             n = l.get('name', '').lower()
             if name.lower() in n and not any(w in n for w in skip):
                 price = l.get('default_sku', {}).get('display_price', '')
-                ps_url = f"https://store.playstation.com/tr-tr/search/{requests.utils.quote(name)}"
                 result['ps_price'] = price if price else None
-                result['ps_url'] = ps_url
+                result['ps_url'] = f"https://store.playstation.com/tr-tr/search/{requests.utils.quote(name)}"
                 result['ps_available'] = True
                 break
     except:
         result['ps_available'] = False
-
     return result
 
 @app.get("/subscriptions")
 def check_subscriptions(name: str):
-    """Game Pass ve PS Plus kontrolü"""
     result = {}
-
-    # Game Pass
     try:
         r = requests.get(
             "https://catalog.gamepass.com/sigls/v2?id=fdd9e2a7-0fee-49f6-ad69-4354098401ff&language=tr-TR&market=TR",
@@ -164,8 +168,6 @@ def check_subscriptions(name: str):
         )
     except:
         result['gamepass'] = False
-
-    # PS Plus (JSON)
     try:
         with open("psplus_games.json", "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -173,12 +175,10 @@ def check_subscriptions(name: str):
         result['psplus'] = any(name.lower() in g.lower() or g.lower() in name.lower() for g in games)
     except:
         result['psplus'] = False
-
     return result
 
 @app.get("/metacritic")
 def get_metacritic(name: str):
-    """IGDB'den Metacritic skoru"""
     try:
         token = get_igdb_token()
         if not token:
@@ -203,12 +203,7 @@ def get_metacritic(name: str):
     return {"score": None}
 
 @app.get("/recommendations")
-def get_recommendations(
-    puan_min: int = 85,
-    puan_max: int = 100,
-    tags: str = ""
-):
-    """RAWG'dan oyun önerileri"""
+def get_recommendations(puan_min: int = 85, puan_max: int = 100, tags: str = ""):
     try:
         params = {
             "key": RAWG_API_KEY,
@@ -222,3 +217,79 @@ def get_recommendations(
         return {"results": [{"name": g['name'], "metacritic": g.get('metacritic')} for g in r.get('results', [])]}
     except:
         return {"results": []}
+
+# --- KULLANICI ENDPOINTS ---
+
+@app.post("/users")
+def create_or_get_user(email: str, display_name: str = "", avatar_url: str = ""):
+    try:
+        existing = supabase.table("users").select("*").eq("email", email).execute()
+        if existing.data:
+            return existing.data[0]
+        new_user = supabase.table("users").insert({
+            "email": email,
+            "display_name": display_name,
+            "avatar_url": avatar_url
+        }).execute()
+        return new_user.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/users/{user_id}/games")
+def get_user_games(user_id: str):
+    try:
+        games = supabase.table("games").select("*, categories(name)").eq("user_id", user_id).execute()
+        return {"games": games.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/games")
+def add_game(game: GameAdd):
+    try:
+        result = supabase.table("games").insert({
+            "user_id": game.user_id,
+            "name": game.name,
+            "category_id": game.category_id,
+            "status": game.status
+        }).execute()
+        return result.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.patch("/games/{game_id}")
+def update_game(game_id: str, update: GameUpdate):
+    try:
+        data = {k: v for k, v in update.dict().items() if v is not None}
+        if update.status == "completed":
+            data["completed_at"] = "now()"
+        result = supabase.table("games").update(data).eq("id", game_id).execute()
+        return result.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/games/{game_id}")
+def delete_game(game_id: str):
+    try:
+        supabase.table("games").delete().eq("id", game_id).execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/users/{user_id}/categories")
+def get_categories(user_id: str):
+    try:
+        cats = supabase.table("categories").select("*").eq("user_id", user_id).execute()
+        return {"categories": cats.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/categories")
+def add_category(cat: CategoryAdd):
+    try:
+        result = supabase.table("categories").insert({
+            "user_id": cat.user_id,
+            "name": cat.name
+        }).execute()
+        return result.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
