@@ -307,3 +307,106 @@ def add_category(cat: CategoryAdd):
         return result.data[0]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/game_full/{app_id}")
+def get_game_full(app_id: int, name: str = ""):
+    result = {}
+    # Steam detayları
+    try:
+        det = requests.get(f"https://store.steampowered.com/api/appdetails?appids={app_id}&l=turkish").json()
+        if det[str(app_id)]['success']:
+            data = det[str(app_id)]['data']
+            result['header_image'] = data.get('header_image', '')
+            result['tags'] = [g['description'] for g in data.get('genres', [])][:5]
+            result['name'] = data.get('name', '')
+            price_data = data.get('price_overview', {})
+            if price_data:
+                f_usd = price_data.get('final', 0) / 100
+                try:
+                    kur = requests.get("https://api.exchangerate-api.com/v4/latest/USD").json()['rates']['TRY']
+                    result['steam'] = f"{f_usd*kur:.0f} TL (${f_usd:.2f})"
+                except:
+                    result['steam'] = f"${f_usd:.2f}"
+    except:
+        pass
+    # Steam puanı
+    try:
+        r = requests.get(f"https://store.steampowered.com/appreviews/{app_id}?json=1&language=all").json()
+        total = r["query_summary"]["total_reviews"]
+        positive = r["query_summary"]["total_positive"]
+        if total > 0:
+            result['steam_score'] = f"%{round((positive/total)*100)} Olumlu"
+    except:
+        pass
+    # Epic fiyat
+    if name:
+        try:
+            clean = re.sub(r'\(.*?\)|[:™®]', '', name).strip()
+            lookup = requests.get("https://api.isthereanydeal.com/games/lookup/v1", params={"key": ITAD_API_KEY, "title": clean}, timeout=5).json()
+            if lookup.get('game'):
+                prices = requests.post("https://api.isthereanydeal.com/games/prices/v3", params={"key": ITAD_API_KEY, "country": "TR"}, json=[lookup['game']['id']], timeout=5).json()
+                if prices:
+                    for deal in prices[0].get('deals', []):
+                        if deal.get('shop', {}).get('id') == 16:
+                            amount = deal['price']['amount']
+                            try:
+                                kur = requests.get("https://api.exchangerate-api.com/v4/latest/USD").json()['rates']['TRY']
+                                result['epic'] = f"{amount:.0f} TL (${amount/kur:.2f})"
+                            except:
+                                result['epic'] = f"{amount:.0f} TL"
+                            break
+        except:
+            pass
+    # PS Store
+    if name:
+        try:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = requests.get(f"https://store.playstation.com/store/api/chihiro/00_09_000/tumbler/TR/tr/999/{requests.utils.quote(name)}?suggested_size=5&mode=game", headers=headers, timeout=10).json()
+            for l in r.get('links', []):
+                n = l.get('name', '').lower()
+                if name.lower() in n and not any(w in n for w in ['dlc', 'upgrade', 'soundtrack']):
+                    price = l.get('default_sku', {}).get('display_price', '')
+                    result['ps_store'] = price if price else "Mağazada Gör"
+                    result['ps_url'] = f"https://store.playstation.com/tr-tr/search/{requests.utils.quote(name)}"
+                    break
+        except:
+            pass
+    # Metacritic
+    try:
+        igdb_token = requests.post(f"https://id.twitch.tv/oauth2/token?client_id={IGDB_CLIENT_ID}&client_secret={IGDB_CLIENT_SECRET}&grant_type=client_credentials").json()['access_token']
+        clean = re.sub(r'\(.*?\)|[:™®]', '', name or result.get('name','')).strip().lower()
+        igdb_r = requests.post("https://api.igdb.com/v4/games", headers={"Client-ID": IGDB_CLIENT_ID, "Authorization": f"Bearer {igdb_token}"}, data=f'search "{clean}"; fields name,aggregated_rating; limit 5;').json()
+        for g in igdb_r:
+            if clean in g.get('name','').lower() and g.get('aggregated_rating'):
+                result['metascore'] = round(g['aggregated_rating'])
+                break
+    except:
+        pass
+    # HLTB
+    if name:
+        try:
+            from howlongtobeatpy import HowLongToBeat
+            clean = re.sub(r'\(.*?\)|[:™®]', '', name).strip()
+            hltb = HowLongToBeat().search(clean)
+            if hltb:
+                b = max(hltb, key=lambda x: x.similarity)
+                def fmt(s):
+                    if not s or s <= 0: return None
+                    frac = s % 1
+                    if frac < 0.25: return f"{int(s)}h"
+                    elif frac < 0.75: return f"{int(s)}.5h"
+                    else: return f"{int(s)+1}h"
+                result['hltb'] = {"main": fmt(b.main_story), "extra": fmt(b.main_extra), "completionist": fmt(b.completionist)}
+        except:
+            pass
+    # Game Pass & PS Plus
+    try:
+        r = requests.get("https://catalog.gamepass.com/sigls/v2?id=fdd9e2a7-0fee-49f6-ad69-4354098401ff&language=tr-TR&market=TR", timeout=10)
+        game_ids = [item['id'] for item in r.json() if 'id' in item]
+        ids_str = ",".join(game_ids)
+        r2 = requests.get(f"https://displaycatalog.mp.microsoft.com/v7.0/products?bigIds={ids_str}&market=TR&languages=tr-TR&MS-CV=DGU1mcuYo0WMMp", timeout=15)
+        products = r2.json().get('Products', [])
+        result['gamepass'] = any(name.lower() in p.get('LocalizedProperties', [{}])[0].get('ProductTitle', '').lower() for p in products if p.get('LocalizedProperties'))
+    except:
+        result['gamepass'] = False
+    return result
