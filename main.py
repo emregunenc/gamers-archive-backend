@@ -409,24 +409,16 @@ def get_game_full(app_id: int, name: str = ""):
         result['gamepass'] = any(name.lower() in p.get('LocalizedProperties', [{}])[0].get('ProductTitle', '').lower() for p in products if p.get('LocalizedProperties'))
     except:
         result['gamepass'] = False
-    # PS Plus
+    # PS Plus - JSON dosyasından kontrol
     try:
+        with open("psplus_games.json", "r", encoding="utf-8") as f:
+            psplus_data = json.load(f)
+        psplus_games = psplus_data.get("games", [])
         clean_name = re.sub(r'\(.*?\)|[:™®]', '', name).strip().lower()
-        ps_r = requests.get(
-            f"https://store.playstation.com/store/api/chihiro/00_09_000/tumbler/TR/tr/999/{requests.utils.quote(name)}?suggested_size=10&mode=game",
-            headers={"User-Agent": "Mozilla/5.0"}, timeout=10
-        ).json()
-        result['psplus'] = False
-        for link in ps_r.get('links', []):
-            link_name = link.get('name', '').lower()
-            if clean_name in link_name or link_name in clean_name:
-                skus = link.get('skus', [])
-                for sku in skus:
-                    entitlements = sku.get('entitlements', [])
-                    for e in entitlements:
-                        if 'plus' in e.get('id', '').lower() or 'ps-plus' in str(e).lower():
-                            result['psplus'] = True
-                            break
+        result['psplus'] = any(
+            clean_name in g.lower() or g.lower() in clean_name
+            for g in psplus_games
+        )
     except:
         result['psplus'] = False
     return result
