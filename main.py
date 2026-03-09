@@ -261,22 +261,6 @@ def get_metacritic(name: str):
         pass
     return {"score": None}
 
-@app.get("/recommendations")
-def get_recommendations(puan_min: int = 85, puan_max: int = 100, tags: str = ""):
-    try:
-        params = {
-            "key": RAWG_API_KEY,
-            "metacritic": f"{puan_min},{puan_max}",
-            "page_size": 15,
-            "ordering": "-metacritic",
-        }
-        if tags:
-            params["tags"] = tags
-        r = requests.get("https://api.rawg.io/api/games", params=params, timeout=10).json()
-        return {"results": [{"name": g['name'], "metacritic": g.get('metacritic')} for g in r.get('results', [])]}
-    except:
-        return {"results": []}
-
 # --- KULLANICI ENDPOINTS ---
 
 def get_country_from_ip(ip: str) -> str:
@@ -287,6 +271,10 @@ def get_country_from_ip(ip: str) -> str:
     except:
         pass
     return "TR"
+
+@app.get("/recommendations")
+def get_recommendations(
+    score_min: int = 80,
 
 @app.post("/users")
 def create_or_get_user(request: Request, email: str, display_name: str = "", avatar_url: str = ""):
@@ -366,73 +354,7 @@ def add_category(cat: CategoryAdd):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/recommendations")
-def get_recommendations(
-    score_min: int = 80,
-    score_max: int = 100,
-    tags: str = "",
-    hltb_min: float = 0,
-    hltb_max: float = 999,
-    archive_names: str = "",
-    page_size: int = 40,
-):
-    try:
-        params = {
-            "key": RAWG_API_KEY,
-            "metacritic": f"{score_min},{score_max}",
-            "page_size": min(page_size, 40),
-            "ordering": "-metacritic",
-        }
-        if tags:
-            params["tags"] = tags
-
-        r = requests.get("https://api.rawg.io/api/games", params=params, timeout=10).json()
-        results = r.get('results', [])
-
-        archive_set = set(n.strip().lower() for n in archive_names.split(",") if n.strip())
-
-        output = []
-        for oyun in results:
-            if len(output) >= 5:
-                break
-            name = oyun.get('name', '')
-            metacritic = oyun.get('metacritic')
-            background = oyun.get('background_image', '')
-            genres = [g['name'] for g in oyun.get('genres', [])]
-            in_archive = name.lower() in archive_set
-
-            # Metacritic null olanları ve aralık dışındakileri atla
-            if metacritic is None:
-                continue
-            if not (score_min <= metacritic <= score_max):
-                continue
-
-            # HLTB filtresi — sadece süre seçildiyse uygula
-            if hltb_max < 999:
-                try:
-                    from howlongtobeatpy import HowLongToBeat
-                    import re as _re
-                    clean = _re.sub(r'\(.*?\)|[:™®]', '', name).strip()
-                    hltb_r = HowLongToBeat().search(clean)
-                    if hltb_r:
-                        sure = max(hltb_r, key=lambda x: x.similarity).main_story
-                        if sure and not (hltb_min <= sure <= hltb_max):
-                            continue
-                except:
-                    pass
-
-            output.append({
-                "name": name,
-                "metacritic": metacritic,
-                "background_image": background,
-                "genres": genres,
-                "in_archive": in_archive,
-            })
-
-        return {"results": output}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+@app.get("/psplus_debug")
 def psplus_debug(name: str = "hades"):
     games = get_psplus_catalog()
     clean = re.sub(r'\(.*?\)|[:™®]', '', name).strip().lower()
