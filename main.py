@@ -10,6 +10,64 @@ from typing import Optional
 
 app = FastAPI(title="Gamer's Archive API")
 
+# PS Plus catalog cache
+import time
+_psplus_cache = {"games": [], "last_updated": 0}
+
+def get_psplus_catalog():
+    global _psplus_cache
+    # Refresh every 24 hours
+    if time.time() - _psplus_cache["last_updated"] < 86400 and _psplus_cache["games"]:
+        return _psplus_cache["games"]
+    try:
+        games = []
+        page = 0
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        }
+        while True:
+            r = requests.get(
+                f"https://store.playstation.com/en-tr/category/44d8bb20-653e-431e-8ad0-c0a365f68d2f/{page+1}",
+                headers=headers, timeout=15
+            )
+            # Try alternative API
+            r2 = requests.get(
+                "https://web.np.playstation.com/api/graphql/v1/op",
+                params={
+                    "operationName": "categoryGridRetrieve",
+                    "variables": json.dumps({"id": "44d8bb20-653e-431e-8ad0-c0a365f68d2f", "pageArgs": {"size": 100, "offset": page * 100}, "sortBy": {"name": "score", "isAscending": False}, "filterBy": [], "languageCode": "tr", "countryCode": "TR"}),
+                    "extensions": json.dumps({"persistedQuery": {"version": 1, "sha256Hash": "4c2afe20a8daf10a29e59e1e8c39e7bba3b0de91bc7d4cb4aa78cd51f22a2e0d"}})
+                },
+                headers={**headers, "Origin": "https://store.playstation.com"},
+                timeout=15
+            )
+            if r2.status_code == 200:
+                data = r2.json()
+                products = data.get("data", {}).get("categoryGridRetrieve", {}).get("products", [])
+                if not products:
+                    break
+                for p in products:
+                    name = p.get("name", "")
+                    if name:
+                        games.append(name)
+                if len(products) < 100:
+                    break
+                page += 1
+            else:
+                break
+        if games:
+            _psplus_cache = {"games": games, "last_updated": time.time()}
+            return games
+    except Exception as e:
+        print(f"PS Plus catalog error: {e}")
+    # Fallback to JSON file
+    try:
+        with open("psplus_games.json", "r", encoding="utf-8") as f:
+            return json.load(f).get("games", [])
+    except:
+        return []
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -409,24 +467,14 @@ def get_game_full(app_id: int, name: str = ""):
         result['gamepass'] = any(name.lower() in p.get('LocalizedProperties', [{}])[0].get('ProductTitle', '').lower() for p in products if p.get('LocalizedProperties'))
     except:
         result['gamepass'] = False
-    # PS Plus
+    # PS Plus - dinamik katalogdan kontrol
     try:
+        psplus_games = get_psplus_catalog()
         clean_name = re.sub(r'\(.*?\)|[:™®]', '', name).strip().lower()
-        ps_r = requests.get(
-            f"https://store.playstation.com/store/api/chihiro/00_09_000/tumbler/TR/tr/999/{requests.utils.quote(name)}?suggested_size=10&mode=game",
-            headers={"User-Agent": "Mozilla/5.0"}, timeout=10
-        ).json()
-        result['psplus'] = False
-        for link in ps_r.get('links', []):
-            link_name = link.get('name', '').lower()
-            if clean_name in link_name or link_name in clean_name:
-                skus = link.get('skus', [])
-                for sku in skus:
-                    entitlements = sku.get('entitlements', [])
-                    for e in entitlements:
-                        if 'plus' in e.get('id', '').lower() or 'ps-plus' in str(e).lower():
-                            result['psplus'] = True
-                            break
+        result['psplus'] = any(
+            clean_name in g.lower() or g.lower() in clean_name
+            for g in psplus_games
+        )
     except:
         result['psplus'] = False
     return result
