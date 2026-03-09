@@ -366,7 +366,67 @@ def add_category(cat: CategoryAdd):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/psplus_debug")
+@app.get("/recommendations")
+def get_recommendations(
+    score_min: int = 80,
+    score_max: int = 100,
+    tags: str = "",           # virgülle ayrılmış RAWG tag id'leri
+    hltb_min: float = 0,
+    hltb_max: float = 999,
+    archive_names: str = "",  # virgülle ayrılmış arşiv oyun isimleri (küçük harf)
+):
+    try:
+        params = {
+            "key": RAWG_API_KEY,
+            "metacritic": f"{score_min},{score_max}",
+            "page_size": 20,
+            "ordering": "-metacritic",
+        }
+        if tags:
+            params["tags"] = tags
+
+        r = requests.get("https://api.rawg.io/api/games", params=params, timeout=10).json()
+        results = r.get('results', [])
+
+        archive_set = set(n.strip().lower() for n in archive_names.split(",") if n.strip())
+
+        output = []
+        for oyun in results:
+            if len(output) >= 5:
+                break
+            name = oyun.get('name', '')
+            metacritic = oyun.get('metacritic')
+            slug = oyun.get('slug', '')
+            background = oyun.get('background_image', '')
+            genres = [g['name'] for g in oyun.get('genres', [])]
+            in_archive = name.lower() in archive_set
+
+            # HLTB filtresi — sadece süre seçildiyse uygula
+            if hltb_max < 999:
+                try:
+                    from howlongtobeatpy import HowLongToBeat
+                    import re as _re
+                    clean = _re.sub(r'\(.*?\)|[:™®]', '', name).strip()
+                    hltb_r = HowLongToBeat().search(clean)
+                    if hltb_r:
+                        sure = max(hltb_r, key=lambda x: x.similarity).main_story
+                        if sure and not (hltb_min <= sure <= hltb_max):
+                            continue
+                except:
+                    pass
+
+            output.append({
+                "name": name,
+                "metacritic": metacritic,
+                "background_image": background,
+                "genres": genres,
+                "in_archive": in_archive,
+            })
+
+        return {"results": output}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 def psplus_debug(name: str = "hades"):
     games = get_psplus_catalog()
     clean = re.sub(r'\(.*?\)|[:™®]', '', name).strip().lower()
