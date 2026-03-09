@@ -370,16 +370,17 @@ def add_category(cat: CategoryAdd):
 def get_recommendations(
     score_min: int = 80,
     score_max: int = 100,
-    tags: str = "",           # virgülle ayrılmış RAWG tag id'leri
+    tags: str = "",
     hltb_min: float = 0,
     hltb_max: float = 999,
-    archive_names: str = "",  # virgülle ayrılmış arşiv oyun isimleri (küçük harf)
+    archive_names: str = "",
+    page_size: int = 40,
 ):
     try:
         params = {
             "key": RAWG_API_KEY,
             "metacritic": f"{score_min},{score_max}",
-            "page_size": 40,
+            "page_size": min(page_size, 40),
             "ordering": "-metacritic",
         }
         if tags:
