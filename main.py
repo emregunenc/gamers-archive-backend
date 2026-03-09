@@ -379,7 +379,7 @@ def get_recommendations(
         params = {
             "key": RAWG_API_KEY,
             "metacritic": f"{score_min},{score_max}",
-            "page_size": 20,
+            "page_size": 40,
             "ordering": "-metacritic",
         }
         if tags:
@@ -396,10 +396,15 @@ def get_recommendations(
                 break
             name = oyun.get('name', '')
             metacritic = oyun.get('metacritic')
-            slug = oyun.get('slug', '')
             background = oyun.get('background_image', '')
             genres = [g['name'] for g in oyun.get('genres', [])]
             in_archive = name.lower() in archive_set
+
+            # Metacritic null olanları ve aralık dışındakileri atla
+            if metacritic is None:
+                continue
+            if not (score_min <= metacritic <= score_max):
+                continue
 
             # HLTB filtresi — sadece süre seçildiyse uygula
             if hltb_max < 999:
