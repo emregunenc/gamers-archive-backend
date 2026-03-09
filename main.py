@@ -283,17 +283,21 @@ def get_recommendations(
     page_size: int = 40,
 ):
     try:
+        import random
+        orderings = ["-metacritic", "-rating", "-added"]
         params = {
             "key": RAWG_API_KEY,
             "metacritic": f"{score_min},{score_max}",
-            "page_size": min(page_size, 40),
-            "ordering": "-metacritic",
+            "page_size": 40,
+            "ordering": random.choice(orderings),
+            "page": random.randint(1, 3),
         }
         if tags:
             params["tags"] = tags
 
         r = requests.get("https://api.rawg.io/api/games", params=params, timeout=10).json()
         results = r.get('results', [])
+        random.shuffle(results)
         archive_set = set(n.strip().lower() for n in archive_names.split(",") if n.strip())
 
         output = []
