@@ -366,6 +366,13 @@ def add_category(cat: CategoryAdd):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/psplus_debug")
+def psplus_debug(name: str = "hades"):
+    games = get_psplus_catalog()
+    clean = re.sub(r'\(.*?\)|[:™®]', '', name).strip().lower()
+    matches = [g for g in games if clean in g.lower() or g.lower() in clean]
+    return {"total": len(games), "matches": matches, "query": clean}
+
 @app.get("/game_full/{app_id}")
 def get_game_full(app_id: int, name: str = ""):
     result = {}
