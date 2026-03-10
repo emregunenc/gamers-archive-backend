@@ -173,15 +173,52 @@ def detect_locale(request: Request, lang: str = ""):
 
 @app.get("/search")
 def search_game(query: str):
+    results = []
+
+    # 1) Steam arama
     try:
         r = requests.get(
-            f"https://store.steampowered.com/api/storesearch/?term={query}&l=turkish&cc=TR",
+            f"https://store.steampowered.com/api/storesearch/?term={query}&l=english&cc=US",
             timeout=10
         ).json()
-        items = [i for i in r.get('items', []) if "soundtrack" not in i['name'].lower() and "dlc" not in i['name'].lower()]
-        return {"results": items[:3]}
+        steam_items = [
+            {**i, "source": "steam"}
+            for i in r.get("items", [])
+            if "soundtrack" not in i["name"].lower()
+            and "dlc" not in i["name"].lower()
+            and "demo" not in i["name"].lower()
+        ]
+        results.extend(steam_items[:5])
     except:
-        return {"results": []}
+        pass
+
+    # 2) RAWG fallback — Steam'de az sonuç varsa veya hiç yoksa
+    if len(results) < 3:
+        try:
+            rawg_r = requests.get(
+                "https://api.rawg.io/api/games",
+                params={"key": RAWG_API_KEY, "search": query, "page_size": 6, "search_precise": True},
+                timeout=10
+            ).json()
+            steam_names = {r["name"].lower() for r in results}
+            for g in rawg_r.get("results", []):
+                if g["name"].lower() not in steam_names:
+                    results.append({
+                        "id": f"rawg_{g['id']}",
+                        "name": g["name"],
+                        "tiny_image": g.get("background_image"),
+                        "source": "rawg",
+                        "rawg_id": g["id"],
+                        "rawg_slug": g.get("slug", ""),
+                        "metacritic": g.get("metacritic"),
+                        "platforms": [p["platform"]["name"] for p in g.get("platforms", [])][:4],
+                    })
+                if len(results) >= 8:
+                    break
+        except:
+            pass
+
+    return {"results": results[:8]}
 
 @app.get("/game/{app_id}")
 def get_game_details(app_id: int):
@@ -470,6 +507,110 @@ def psplus_debug(name: str = "hades"):
     clean = re.sub(r'\(.*?\)|[:™®]', '', name).strip().lower()
     matches = [g for g in games if clean in g.lower() or g.lower() in clean]
     return {"total": len(games), "matches": matches, "query": clean}
+
+
+@app.get("/game_full/rawg/{rawg_id}")
+def get_game_full_rawg(rawg_id: int, name: str = "", lang: str = "tr"):
+    """PS/Nintendo/multi-platform oyunlar için RAWG bazlı detay"""
+    result = {"source": "rawg", "steam": "N/A"}
+    locale = get_locale_config(lang)
+    currency = locale["currency"]
+    ps_country = locale["ps_country"]
+    ps_lang = locale["ps_lang"]
+    ps_locale_str = locale["ps_locale"]
+
+    # Döviz kuru
+    try:
+        rates = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=5).json()["rates"]
+        usd_to_local = rates.get(currency, 1)
+    except:
+        rates = {}
+        usd_to_local = 1
+
+    # RAWG detayları
+    try:
+        g = requests.get(
+            f"https://api.rawg.io/api/games/{rawg_id}",
+            params={"key": RAWG_API_KEY}, timeout=10
+        ).json()
+        result["name"] = g.get("name", name)
+        result["header_image"] = g.get("background_image", "")
+        result["tags"] = [gn["name"] for gn in g.get("genres", [])][:5]
+        result["metacritic"] = g.get("metacritic")
+        result["description"] = re.sub(r"<[^>]+>", "", g.get("description", ""))[:400]
+        result["platforms"] = [p["platform"]["name"] for p in g.get("platforms", [])][:6]
+        if not name:
+            name = result["name"]
+    except:
+        pass
+
+    # PS Store fiyatı
+    if name:
+        try:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = requests.get(
+                f"https://store.playstation.com/store/api/chihiro/00_09_000/tumbler/{ps_country}/{ps_lang}/999/{requests.utils.quote(name)}?suggested_size=5&mode=game",
+                headers=headers, timeout=10
+            ).json()
+            for l in r.get("links", []):
+                n = l.get("name", "").lower()
+                clean_name = re.sub(r"\(.*?\)|[:™®]", "", name).strip().lower()
+                if clean_name in n and not any(w in n for w in ["dlc", "upgrade", "soundtrack"]):
+                    price = l.get("default_sku", {}).get("display_price", "")
+                    result["ps_store"] = price if price else "Mağazada Gör"
+                    result["ps_url"] = f"https://store.playstation.com/{ps_locale_str}/search/{requests.utils.quote(name)}"
+                    break
+        except:
+            pass
+
+    # Metacritic (IGDB)
+    if not result.get("metacritic") and name:
+        try:
+            igdb_token = requests.post(
+                f"https://id.twitch.tv/oauth2/token?client_id={IGDB_CLIENT_ID}&client_secret={IGDB_CLIENT_SECRET}&grant_type=client_credentials"
+            ).json()["access_token"]
+            clean = re.sub(r"\(.*?\)|[:™®]", "", name).strip().lower()
+            igdb_r = requests.post(
+                "https://api.igdb.com/v4/games",
+                headers={"Client-ID": IGDB_CLIENT_ID, "Authorization": f"Bearer {igdb_token}"},
+                data=f'search "{clean}"; fields name,aggregated_rating; limit 5;'
+            ).json()
+            for g in igdb_r:
+                if clean in g.get("name", "").lower() and g.get("aggregated_rating"):
+                    result["metacritic"] = round(g["aggregated_rating"])
+                    break
+        except:
+            pass
+
+    # HLTB
+    if name:
+        try:
+            from howlongtobeatpy import HowLongToBeat
+            clean = re.sub(r"\(.*?\)|[:™®]", "", name).strip()
+            hltb = HowLongToBeat().search(clean)
+            if hltb:
+                b = max(hltb, key=lambda x: x.similarity)
+                def fmt(s):
+                    if not s or s <= 0: return None
+                    frac = s % 1
+                    if frac < 0.25: return f"{int(s)}h"
+                    elif frac < 0.75: return f"{int(s)}.5h"
+                    else: return f"{int(s)+1}h"
+                result["hltb"] = {"main": fmt(b.main_story), "extra": fmt(b.main_extra), "completionist": fmt(b.completionist)}
+        except:
+            pass
+
+    # PS Plus kontrolü
+    try:
+        psplus_games = get_psplus_catalog()
+        clean_name = re.sub(r"\(.*?\)|[:™®]", "", name).strip().lower()
+        result["psplus"] = any(clean_name in g.lower() or g.lower() in clean_name for g in psplus_games)
+    except:
+        result["psplus"] = False
+
+    result["gamepass"] = False  # Nintendo/PS oyunları Game Pass'te olmaz
+
+    return result
 
 @app.get("/game_full/{app_id}")
 def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
