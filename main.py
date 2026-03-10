@@ -706,6 +706,8 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
 
     # PS Store (ülke bazlı)
     if name:
+        # ps_url her zaman set et (fiyat bulunamasa da link çalışsın)
+        result['ps_url'] = f"https://store.playstation.com/{ps_locale_str}/search/{requests.utils.quote(name)}"
         try:
             headers = {"User-Agent": "Mozilla/5.0"}
             r = requests.get(
@@ -717,7 +719,6 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
                 if name.lower() in n and not any(w in n for w in ['dlc', 'upgrade', 'soundtrack']):
                     price = l.get('default_sku', {}).get('display_price', '')
                     result['ps_store'] = price if price else None
-                    result['ps_url'] = f"https://store.playstation.com/{ps_locale_str}/search/{requests.utils.quote(name)}"
                     break
         except:
             pass
