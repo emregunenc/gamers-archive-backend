@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from supabase import create_client
 import requests
 import re
+import unicodedata
 import json
 import os
 from typing import Optional
@@ -615,6 +616,8 @@ def get_game_full_rawg(rawg_id: int, name: str = "", lang: str = "tr"):
 @app.get("/game_full/{app_id}")
 def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
     result = {}
+    # Curly apostrophe ve benzeri unicode karakterleri normalize et
+    name = name.replace('\u2019', "'").replace('\u2018', "'").replace('\u201c', '"').replace('\u201d', '"')
     locale = get_locale_config(lang)
     cc = locale["cc"]
     itad_country = locale["itad_country"]
@@ -741,6 +744,7 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
     if not result.get('metascore') and name:
         try:
             clean = re.sub(r'\(.*?\)|[:™®]', '', name).strip()
+            clean = clean.replace('\u2019', "'").replace('\u2018', "'")
             rawg_r = requests.get(
                 "https://api.rawg.io/api/games",
                 params={"key": RAWG_API_KEY, "search": clean, "page_size": 3, "search_precise": True},
