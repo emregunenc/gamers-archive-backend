@@ -557,7 +557,7 @@ def get_game_full_rawg(rawg_id: int, name: str = "", lang: str = "tr"):
                 clean_name = re.sub(r"\(.*?\)|[:™®]", "", name).strip().lower()
                 if clean_name in n and not any(w in n for w in ["dlc", "upgrade", "soundtrack"]):
                     price = l.get("default_sku", {}).get("display_price", "")
-                    result["ps_store"] = price if price else "Mağazada Gör"
+                    result["ps_store"] = price if price else None
                     result["ps_url"] = f"https://store.playstation.com/{ps_locale_str}/search/{requests.utils.quote(name)}"
                     break
         except:
@@ -713,7 +713,7 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
                 n = l.get('name', '').lower()
                 if name.lower() in n and not any(w in n for w in ['dlc', 'upgrade', 'soundtrack']):
                     price = l.get('default_sku', {}).get('display_price', '')
-                    result['ps_store'] = price if price else "Mağazada Gör"
+                    result['ps_store'] = price if price else None
                     result['ps_url'] = f"https://store.playstation.com/{ps_locale_str}/search/{requests.utils.quote(name)}"
                     break
         except:
