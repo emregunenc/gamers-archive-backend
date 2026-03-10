@@ -719,7 +719,7 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
         except:
             pass
 
-    # Metacritic (IGDB)
+    # Metacritic — önce IGDB, bulamazsa RAWG
     try:
         igdb_token = requests.post(
             f"https://id.twitch.tv/oauth2/token?client_id={IGDB_CLIENT_ID}&client_secret={IGDB_CLIENT_SECRET}&grant_type=client_credentials"
@@ -736,6 +736,22 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
                 break
     except:
         pass
+
+    # Metascore hâlâ yoksa RAWG'dan çek
+    if not result.get('metascore') and name:
+        try:
+            clean = re.sub(r'\(.*?\)|[:™®]', '', name).strip()
+            rawg_r = requests.get(
+                "https://api.rawg.io/api/games",
+                params={"key": RAWG_API_KEY, "search": clean, "page_size": 3, "search_precise": True},
+                timeout=8
+            ).json()
+            for g in rawg_r.get('results', []):
+                if g.get('metacritic') and clean.lower() in g.get('name', '').lower():
+                    result['metascore'] = g['metacritic']
+                    break
+        except:
+            pass
 
     # HLTB
     if name:
