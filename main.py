@@ -643,9 +643,18 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
             result['name'] = data.get('name', '')
             price_data = data.get('price_overview', {})
             if price_data:
-                f_usd = price_data.get('final', 0) / 100
-                f_local = f_usd * usd_to_local
-                result['steam'] = format_price(f_local, locale, f_usd)
+                steam_currency = price_data.get('currency', 'USD')
+                raw_amount = price_data.get('final', 0) / 100
+                if steam_currency == currency:
+                    # Steam zaten doğru para biriminde döndü (ör: TRY → TRY)
+                    result['steam'] = format_price(raw_amount, locale)
+                elif steam_currency == 'USD':
+                    f_local = raw_amount * usd_to_local
+                    result['steam'] = format_price(f_local, locale, raw_amount)
+                else:
+                    usd_equiv = raw_amount / rates.get(steam_currency, 1) if rates else None
+                    f_local = usd_equiv * usd_to_local if usd_equiv else raw_amount
+                    result['steam'] = format_price(f_local, locale, usd_equiv)
     except:
         pass
 
