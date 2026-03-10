@@ -664,7 +664,11 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
         total = r["query_summary"]["total_reviews"]
         positive = r["query_summary"]["total_positive"]
         if total > 0:
-            result['steam_score'] = f"%{round((positive/total)*100)} Olumlu"
+            positive_word = {
+                'tr': 'Olumlu', 'de': 'Positiv', 'es': 'Positivo',
+                'fr': 'Positif', 'ja': 'ポジティブ', 'en_uk': 'Positive', 'en': 'Positive'
+            }.get(lang, 'Positive')
+            result['steam_score'] = f"%{round((positive/total)*100)} {positive_word}"
     except:
         pass
 
