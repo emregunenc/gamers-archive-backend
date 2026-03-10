@@ -747,7 +747,8 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
                 timeout=8
             ).json()
             for g in rawg_r.get('results', []):
-                if g.get('metacritic') and clean.lower() in g.get('name', '').lower():
+                g_name = re.sub(r'\(.*?\)|[:™®]', '', g.get('name', '')).strip().lower()
+                if g.get('metacritic') and (clean.lower() in g_name or g_name in clean.lower()):
                     result['metascore'] = g['metacritic']
                     break
         except:
