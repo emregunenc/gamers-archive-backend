@@ -536,7 +536,7 @@ def get_game_full_rawg(rawg_id: int, name: str = "", lang: str = "tr"):
         result["name"] = g.get("name", name)
         result["header_image"] = g.get("background_image", "")
         result["tags"] = [gn["name"] for gn in g.get("genres", [])][:5]
-        result["metacritic"] = g.get("metacritic")
+        result["metascore"] = g.get("metacritic")
         result["description"] = re.sub(r"<[^>]+>", "", g.get("description", ""))[:400]
         result["platforms"] = [p["platform"]["name"] for p in g.get("platforms", [])][:6]
         if not name:
@@ -564,7 +564,7 @@ def get_game_full_rawg(rawg_id: int, name: str = "", lang: str = "tr"):
             pass
 
     # Metacritic (IGDB)
-    if not result.get("metacritic") and name:
+    if not result.get("metascore") and name:
         try:
             igdb_token = requests.post(
                 f"https://id.twitch.tv/oauth2/token?client_id={IGDB_CLIENT_ID}&client_secret={IGDB_CLIENT_SECRET}&grant_type=client_credentials"
@@ -577,7 +577,7 @@ def get_game_full_rawg(rawg_id: int, name: str = "", lang: str = "tr"):
             ).json()
             for g in igdb_r:
                 if clean in g.get("name", "").lower() and g.get("aggregated_rating"):
-                    result["metacritic"] = round(g["aggregated_rating"])
+                    result["metascore"] = round(g["aggregated_rating"])
                     break
         except:
             pass
