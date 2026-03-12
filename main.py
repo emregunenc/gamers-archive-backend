@@ -840,4 +840,7 @@ Mesaj:
 
         return {"success": True}
     except Exception as e:
+        import traceback
+        print(f"FEEDBACK ERROR: {str(e)}")
+        print(traceback.format_exc())
         return {"success": False, "error": str(e)}
