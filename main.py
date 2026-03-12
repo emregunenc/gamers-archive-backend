@@ -6,6 +6,8 @@ import requests
 import re
 import unicodedata
 import smtplib
+import urllib.request
+import json as _json
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pydantic import BaseModel
@@ -834,12 +836,30 @@ Mesaj:
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
-        with smtplib.SMTP('smtp.gmail.com', 587, timeout=15) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(gmail_user, gmail_pass)
-            server.send_message(msg)
+        # SendGrid API ile gönder
+        sg_key = os.getenv("SENDGRID_API_KEY", "")
+        if not sg_key:
+            return {"success": False, "error": "SendGrid key eksik"}
+
+        payload = _json.dumps({
+            "personalizations": [{"to": [{"email": gmail_user}]}],
+            "from": {"email": gmail_user},
+            "subject": subject,
+            "content": [{"type": "text/plain", "value": body}]
+        }).encode('utf-8')
+
+        req = urllib.request.Request(
+            "https://api.sendgrid.com/v3/mail/send",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {sg_key}",
+                "Content-Type": "application/json"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status not in (200, 202):
+                return {"success": False, "error": f"SendGrid status: {resp.status}"}
 
         return {"success": True}
     except Exception as e:
