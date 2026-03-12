@@ -5,6 +5,10 @@ from supabase import create_client
 import requests
 import re
 import unicodedata
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from pydantic import BaseModel
 import json
 import os
 from typing import Optional
@@ -801,3 +805,39 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
 
     return result
 
+
+
+class FeedbackRequest(BaseModel):
+    type: str  # "oneri" veya "sikayet"
+    message: str
+    user_email: str = ""
+
+@app.post("/feedback")
+def send_feedback(req: FeedbackRequest):
+    try:
+        gmail_user = os.getenv("GMAIL_USER", "")
+        gmail_pass = os.getenv("GMAIL_PASS", "")
+        if not gmail_user or not gmail_pass:
+            return {"success": False, "error": "Mail config eksik"}
+
+        subject = f"[Gamer's Archive] {'Öneri' if req.type == 'oneri' else 'Şikayet'}"
+        body = f"""
+Tür: {req.type}
+Kullanıcı: {req.user_email or 'Anonim'}
+
+Mesaj:
+{req.message}
+"""
+        msg = MIMEMultipart()
+        msg['From'] = gmail_user
+        msg['To'] = gmail_user
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(gmail_user, gmail_pass)
+            server.send_message(msg)
+
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
