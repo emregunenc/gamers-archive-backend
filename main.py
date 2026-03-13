@@ -6,6 +6,7 @@ import requests
 import re
 import unicodedata
 import smtplib
+import resend
 import urllib.request
 import json as _json
 from email.mime.text import MIMEText
@@ -836,37 +837,20 @@ Mesaj:
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
-        # Resend API ile gönder
+        # Resend SDK ile gönder
         resend_key = os.getenv("RESEND_API_KEY", "").strip()
         if not resend_key:
             return {"success": False, "error": "Resend key eksik"}
 
-        payload = _json.dumps({
+        resend.api_key = resend_key
+        params = {
             "from": "Gamer's Archive <onboarding@resend.dev>",
             "to": [gmail_user],
             "subject": subject,
             "text": body
-        }).encode('utf-8')
-
-        req = urllib.request.Request(
-            "https://api.resend.com/emails",
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {resend_key}",
-                "Content-Type": "application/json"
-            },
-            method="POST"
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                resp_body = resp.read()
-                print(f"Resend response: {resp.status} {resp_body}")
-                if resp.status not in (200, 201):
-                    return {"success": False, "error": f"Resend status: {resp.status}"}
-        except urllib.error.HTTPError as http_err:
-            err_body = http_err.read().decode('utf-8')
-            print(f"Resend 403 body: {err_body}")
-            raise
+        }
+        email = resend.Emails.send(params)
+        print(f"Resend response: {email}")
 
         return {"success": True}
     except Exception as e:
