@@ -837,7 +837,7 @@ Mesaj:
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
         # SendGrid API ile gönder
-        sg_key = os.getenv("SENDGRID_API_KEY", "")
+        sg_key = os.getenv("SENDGRID_API_KEY", "").strip()
         if not sg_key:
             return {"success": False, "error": "SendGrid key eksik"}
 
