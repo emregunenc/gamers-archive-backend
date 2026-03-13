@@ -858,3 +858,40 @@ Mesaj:
         print(f"FEEDBACK ERROR: {str(e)}")
         print(traceback.format_exc())
         return {"success": False, "error": str(e)}
+
+
+@app.get("/steam_import")
+def steam_import(steam_id: str):
+    try:
+        steam_key = os.getenv("STEAM_API_KEY", "").strip()
+        if not steam_key:
+            return {"success": False, "error": "Steam API key eksik"}
+
+        # Kullanıcının oyunlarını çek
+        url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key={steam_key}&steamid={steam_id}&include_appinfo=true&include_played_free_games=true"
+        r = requests.get(url, timeout=15)
+        data = r.json()
+
+        games = data.get("response", {}).get("games", [])
+        if not games:
+            return {"success": False, "error": "Oyun bulunamadı veya profil gizli"}
+
+        result = []
+        for g in games:
+            result.append({
+                "name": g.get("name", ""),
+                "steam_app_id": str(g.get("appid", "")),
+                "cover_url": f"https://cdn.cloudflare.steamstatic.com/steam/apps/{g.get('appid')}/library_600x900.jpg",
+                "playtime_minutes": g.get("playtime_forever", 0),
+            })
+
+        # Oynama süresine göre sırala
+        result.sort(key=lambda x: x["playtime_minutes"], reverse=True)
+
+        return {"success": True, "games": result, "total": len(result)}
+
+    except Exception as e:
+        import traceback
+        print(f"STEAM IMPORT ERROR: {e}")
+        print(traceback.format_exc())
+        return {"success": False, "error": str(e)}
