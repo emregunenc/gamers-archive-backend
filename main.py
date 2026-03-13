@@ -836,30 +836,31 @@ Mesaj:
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
-        # SendGrid API ile gönder
-        sg_key = os.getenv("SENDGRID_API_KEY", "").strip()
-        if not sg_key:
-            return {"success": False, "error": "SendGrid key eksik"}
+        # Resend API ile gönder
+        resend_key = os.getenv("RESEND_API_KEY", "").strip()
+        if not resend_key:
+            return {"success": False, "error": "Resend key eksik"}
 
         payload = _json.dumps({
-            "personalizations": [{"to": [{"email": gmail_user}]}],
-            "from": {"email": gmail_user},
+            "from": "Gamer's Archive <onboarding@resend.dev>",
+            "to": [gmail_user],
             "subject": subject,
-            "content": [{"type": "text/plain", "value": body}]
+            "text": body
         }).encode('utf-8')
 
         req = urllib.request.Request(
-            "https://api.sendgrid.com/v3/mail/send",
+            "https://api.resend.com/emails",
             data=payload,
             headers={
-                "Authorization": f"Bearer {sg_key}",
+                "Authorization": f"Bearer {resend_key}",
                 "Content-Type": "application/json"
             },
             method="POST"
         )
         with urllib.request.urlopen(req, timeout=15) as resp:
-            if resp.status not in (200, 202):
-                return {"success": False, "error": f"SendGrid status: {resp.status}"}
+            resp_body = resp.read()
+            if resp.status not in (200, 201):
+                return {"success": False, "error": f"Resend status: {resp.status}"}
 
         return {"success": True}
     except Exception as e:
