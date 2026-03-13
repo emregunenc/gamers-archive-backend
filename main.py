@@ -857,10 +857,16 @@ Mesaj:
             },
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            resp_body = resp.read()
-            if resp.status not in (200, 201):
-                return {"success": False, "error": f"Resend status: {resp.status}"}
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                resp_body = resp.read()
+                print(f"Resend response: {resp.status} {resp_body}")
+                if resp.status not in (200, 201):
+                    return {"success": False, "error": f"Resend status: {resp.status}"}
+        except urllib.error.HTTPError as http_err:
+            err_body = http_err.read().decode('utf-8')
+            print(f"Resend 403 body: {err_body}")
+            raise
 
         return {"success": True}
     except Exception as e:
