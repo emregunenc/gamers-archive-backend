@@ -536,6 +536,7 @@ def get_game_full_rawg(rawg_id: int, name: str = "", lang: str = "tr"):
         usd_to_local = 1
 
     # RAWG detayları
+    steam_app_id = None
     try:
         g = requests.get(
             f"https://api.rawg.io/api/games/{rawg_id}",
@@ -551,6 +552,57 @@ def get_game_full_rawg(rawg_id: int, name: str = "", lang: str = "tr"):
             name = result["name"]
     except:
         pass
+
+    # RAWG stores'dan Steam app ID çek
+    try:
+        stores_r = requests.get(
+            f"https://api.rawg.io/api/games/{rawg_id}/stores",
+            params={"key": RAWG_API_KEY}, timeout=10
+        ).json()
+        for s in stores_r.get("results", []):
+            if s.get("store_id") == 1:  # 1 = Steam
+                url = s.get("url", "")
+                import re as _re
+                m = _re.search(r"/app/(\d+)", url)
+                if m:
+                    steam_app_id = int(m.group(1))
+                break
+    except:
+        pass
+
+    # Steam fiyatı (Steam app ID bulunduysa)
+    if steam_app_id:
+        try:
+            det = requests.get(
+                f"https://store.steampowered.com/api/appdetails?appids={steam_app_id}&cc={locale['cc']}&l={locale['lang']}",
+                cookies={"birthtime": "631152001", "mature_content": "1", "lastagecheckage": "1-0-1990"},
+                timeout=10
+            ).json()
+            if det[str(steam_app_id)]["success"]:
+                price_data = det[str(steam_app_id)]["data"].get("price_overview", {})
+                if price_data:
+                    steam_currency = price_data.get("currency", "USD")
+                    raw_amount = price_data.get("final", 0) / 100
+                    if steam_currency == currency:
+                        result["steam"] = format_price(raw_amount, locale)
+                    elif steam_currency == "USD":
+                        result["steam"] = format_price(raw_amount * usd_to_local, locale, raw_amount)
+                    else:
+                        usd_equiv = raw_amount / rates.get(steam_currency, 1) if rates else None
+                        f_local = usd_equiv * usd_to_local if usd_equiv else raw_amount
+                        result["steam"] = format_price(f_local, locale, usd_equiv)
+                # Steam puanı da al
+                r2 = requests.get(f"https://store.steampowered.com/appreviews/{steam_app_id}?json=1&language=all", timeout=10).json()
+                total = r2["query_summary"]["total_reviews"]
+                positive = r2["query_summary"]["total_positive"]
+                if total > 0:
+                    positive_word = {
+                        'tr': 'Olumlu', 'de': 'Positiv', 'es': 'Positivo',
+                        'fr': 'Positif', 'ja': 'ポジティブ', 'en_uk': 'Positive', 'en': 'Positive'
+                    }.get(lang, 'Positive')
+                    result["steam_score"] = f"%{round((positive/total)*100)} {positive_word}"
+        except:
+            pass
 
     # PS Store fiyatı
     if name:
@@ -644,9 +696,7 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
     # Steam detayları (ülke bazlı fiyat için cc parametresi)
     try:
         det = requests.get(
-            f"https://store.steampowered.com/api/appdetails?appids={app_id}&cc={cc}&l={locale['lang']}",
-            cookies={"birthtime": "631152001", "mature_content": "1", "lastagecheckage": "1-0-1990"},
-            timeout=10
+            f"https://store.steampowered.com/api/appdetails?appids={app_id}&cc={cc}&l={locale['lang']}"
         ).json()
         if det[str(app_id)]['success']:
             data = det[str(app_id)]['data']
@@ -658,6 +708,7 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
                 steam_currency = price_data.get('currency', 'USD')
                 raw_amount = price_data.get('final', 0) / 100
                 if steam_currency == currency:
+                    # Steam zaten doğru para biriminde döndü (ör: TRY → TRY)
                     result['steam'] = format_price(raw_amount, locale)
                 elif steam_currency == 'USD':
                     f_local = raw_amount * usd_to_local
@@ -666,28 +717,6 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
                     usd_equiv = raw_amount / rates.get(steam_currency, 1) if rates else None
                     f_local = usd_equiv * usd_to_local if usd_equiv else raw_amount
                     result['steam'] = format_price(f_local, locale, usd_equiv)
-            else:
-                # price_overview boş — yaş doğrulamalı oyun olabilir, storefront'tan dene
-                try:
-                    store_r = requests.get(
-                        f"https://store.steampowered.com/api/appdetails?appids={app_id}&cc={cc}&filters=price_overview",
-                        cookies={"birthtime": "631152001", "mature_content": "1", "lastagecheckage": "1-0-1990"},
-                        timeout=10
-                    ).json()
-                    price_data2 = store_r.get(str(app_id), {}).get('data', {}).get('price_overview', {})
-                    if price_data2:
-                        steam_currency = price_data2.get('currency', 'USD')
-                        raw_amount = price_data2.get('final', 0) / 100
-                        if steam_currency == currency:
-                            result['steam'] = format_price(raw_amount, locale)
-                        elif steam_currency == 'USD':
-                            result['steam'] = format_price(raw_amount * usd_to_local, locale, raw_amount)
-                        else:
-                            usd_equiv = raw_amount / rates.get(steam_currency, 1) if rates else None
-                            f_local = usd_equiv * usd_to_local if usd_equiv else raw_amount
-                            result['steam'] = format_price(f_local, locale, usd_equiv)
-                except:
-                    pass
     except:
         pass
 
