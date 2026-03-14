@@ -644,7 +644,9 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
     # Steam detayları (ülke bazlı fiyat için cc parametresi)
     try:
         det = requests.get(
-            f"https://store.steampowered.com/api/appdetails?appids={app_id}&cc={cc}&l={locale['lang']}"
+            f"https://store.steampowered.com/api/appdetails?appids={app_id}&cc={cc}&l={locale['lang']}",
+            cookies={"birthtime": "631152001", "mature_content": "1", "lastagecheckage": "1-0-1990"},
+            timeout=10
         ).json()
         if det[str(app_id)]['success']:
             data = det[str(app_id)]['data']
@@ -656,7 +658,6 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
                 steam_currency = price_data.get('currency', 'USD')
                 raw_amount = price_data.get('final', 0) / 100
                 if steam_currency == currency:
-                    # Steam zaten doğru para biriminde döndü (ör: TRY → TRY)
                     result['steam'] = format_price(raw_amount, locale)
                 elif steam_currency == 'USD':
                     f_local = raw_amount * usd_to_local
@@ -665,6 +666,28 @@ def get_game_full(app_id: int, name: str = "", lang: str = "tr"):
                     usd_equiv = raw_amount / rates.get(steam_currency, 1) if rates else None
                     f_local = usd_equiv * usd_to_local if usd_equiv else raw_amount
                     result['steam'] = format_price(f_local, locale, usd_equiv)
+            else:
+                # price_overview boş — yaş doğrulamalı oyun olabilir, storefront'tan dene
+                try:
+                    store_r = requests.get(
+                        f"https://store.steampowered.com/api/appdetails?appids={app_id}&cc={cc}&filters=price_overview",
+                        cookies={"birthtime": "631152001", "mature_content": "1", "lastagecheckage": "1-0-1990"},
+                        timeout=10
+                    ).json()
+                    price_data2 = store_r.get(str(app_id), {}).get('data', {}).get('price_overview', {})
+                    if price_data2:
+                        steam_currency = price_data2.get('currency', 'USD')
+                        raw_amount = price_data2.get('final', 0) / 100
+                        if steam_currency == currency:
+                            result['steam'] = format_price(raw_amount, locale)
+                        elif steam_currency == 'USD':
+                            result['steam'] = format_price(raw_amount * usd_to_local, locale, raw_amount)
+                        else:
+                            usd_equiv = raw_amount / rates.get(steam_currency, 1) if rates else None
+                            f_local = usd_equiv * usd_to_local if usd_equiv else raw_amount
+                            result['steam'] = format_price(f_local, locale, usd_equiv)
+                except:
+                    pass
     except:
         pass
 
